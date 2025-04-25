@@ -1,0 +1,28 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "grant-dev:automated-gate",
+  "visibility": "private",
+  "url": "",
+  "description": "Modular generic service: gate-opener",
+  "models": [
+    {
+      "api": "rdk:service:generic",
+      "model": "grant-dev:automated-gate:gate-opener",
+      "short_description": "Provide a short (100 characters or less) description of this model here",
+      "markdown_link": "README.md#model-grant-devautomated-gategate-opener"
+    }
+  ],
+  "applications": null,
+  "markdown_link": "README.md",
+  "entrypoint": "dist/main",
+  "first_run": "",
+  "build": {
+    "build": "./build.sh",
+    "setup": "./setup.sh",
+    "path": "dist/archive.tar.gz",
+    "arch": [
+      "linux/amd64",
+      "linux/arm64"
+    ]
+  }
+}

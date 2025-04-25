@@ -1,0 +1,13 @@
+{
+  "module_name": "automated-gate",
+  "namespace": "grant-dev",
+  "language": "python",
+  "resource_type": "service",
+  "resource_subtype": "generic",
+  "model_name": "gate-opener",
+  "enable_cloud_build": true,
+  "initialize_git": false,
+  "generator_version": "0.1.0",
+  "generated_on": "2025-04-25T21:55:00.731389Z",
+  "module_readme_link": "README.md"
+}
