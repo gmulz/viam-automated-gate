@@ -12,8 +12,10 @@ from viam.utils import ValueTypes
 from viam.components.motor import Motor
 from viam.components.sensor import Sensor
 from viam.components.board import Board
+from google.protobuf.struct_pb2 import Struct
 
 from viam import logging
+from viam.utils import struct_to_dict
 
 LOGGER = logging.getLogger(__name__)
 
@@ -25,8 +27,13 @@ class GateOpener(Generic, EasyResource):
     )
 
     motor: Motor
-    sensor: Sensor
+    open_sensor: Sensor
+    close_sensor: Sensor
     board: Board
+    open_sensor_stop_min: float
+    open_sensor_stop_max: float
+    close_sensor_stop_min: float
+    close_sensor_stop_max: float
 
     @classmethod
     def new(
@@ -55,7 +62,34 @@ class GateOpener(Generic, EasyResource):
         Returns:
             Sequence[str]: A list of implicit dependencies
         """
-        return []
+        if "board" not in config.attributes.fields:
+            raise Exception("Config must include a 'board' attribute")
+        if "motor" not in config.attributes.fields:
+            raise Exception("Config must include a 'motor' attribute")
+        if "open-sensor" not in config.attributes.fields:
+            raise Exception("Config must include an 'open-sensor' attribute (object)")
+        if "close-sensor" not in config.attributes.fields:
+            raise Exception("Config must include a 'close-sensor' attribute (object)")
+
+        sensor_names = []
+        for sensor_config_key in ["open-sensor", "close-sensor"]:
+            sensor_config = struct_to_dict(config.attributes.fields[sensor_config_key].struct_value)
+
+            if "name" not in sensor_config:
+                raise Exception(f"'{sensor_config_key}' must have a non-empty 'name' field")
+            if "stop_min" not in sensor_config:
+                raise Exception(f"'{sensor_config_key}' must have a numeric 'stop_min' field")
+            if "stop_max" not in sensor_config:
+                raise Exception(f"'{sensor_config_key}' must have a numeric 'stop_max' field")
+            if sensor_config["stop_min"] > sensor_config["stop_max"]:
+                raise Exception(f"'{sensor_config_key}' 'stop_min' cannot be greater than 'stop_max'")
+
+            sensor_names.append(sensor_config["name"])
+
+        motor_name = config.attributes.fields["motor"].string_value
+        board_name = config.attributes.fields["board"].string_value
+
+        return [motor_name] + sensor_names + [board_name]
 
     def reconfigure(
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
@@ -66,29 +100,85 @@ class GateOpener(Generic, EasyResource):
             config (ComponentConfig): The new configuration
             dependencies (Mapping[ResourceName, ResourceBase]): Any dependencies (both implicit and explicit)
         """
-        for dep in dependencies:
-            if dep.SUBTYPE == Motor.SUBTYPE:
-                self.motor = dep
-            if dep.SUBTYPE == Sensor.SUBTYPE:
-                self.sensor = dep
-            if dep.SUBTYPE == Board.SUBTYPE:
-                self.board = dep
-        if self.motor is None or self.sensor is None or self.board is None:
-            raise Exception("Missing required dependencies, must have a motor, sensor and board")
+        motor_name = config.attributes.fields["motor"].string_value
+        board_name = config.attributes.fields["board"].string_value
+        open_sensor_config = struct_to_dict(config.attributes.fields["open-sensor"].struct_value)
+        close_sensor_config = struct_to_dict(config.attributes.fields["close-sensor"].struct_value)
+        open_sensor_name = open_sensor_config["name"]
+        close_sensor_name = close_sensor_config["name"]
+
+        self.motor = dependencies[Motor.get_resource_name(motor_name)]
+        self.board = dependencies[Board.get_resource_name(board_name)]
+        self.open_sensor = dependencies[Sensor.get_resource_name(open_sensor_name)]
+        self.close_sensor = dependencies[Sensor.get_resource_name(close_sensor_name)]
+
+        self.open_sensor_stop_min = float(open_sensor_config["stop_min"])
+        self.open_sensor_stop_max = float(open_sensor_config["stop_max"])
+        self.close_sensor_stop_min = float(close_sensor_config["stop_min"])
+        self.close_sensor_stop_max = float(close_sensor_config["stop_max"])
+
+        if self.motor is None or self.open_sensor is None or self.close_sensor is None or self.board is None:
+            raise Exception("Missing required dependencies. Check config and ensure components are running.")
 
         return super().reconfigure(config, dependencies)
 
     async def open_gate(self):
         LOGGER.info("Opening gate")
-        await self.motor.set_power(1.0)
-        await asyncio.sleep(30)
-        await self.motor.set_power(0.0)
+        await self.motor.set_power(-1.0)
+        start_time = asyncio.get_event_loop().time()
+        try:
+            while True:
+                # Check elapsed time
+                if asyncio.get_event_loop().time() - start_time >= 30.0:
+                    LOGGER.info("Open gate timed out after 30 seconds")
+                    break
+
+                # Get sensor readings from open_sensor
+                readings = await self.open_sensor.get_readings()
+                # Assuming the sensor returns a 'distance' key, adjust if necessary
+                distance = readings.get("distance")
+                LOGGER.debug(f"Open Sensor reading: {distance}")
+
+                # Check if reading is within the open_sensor stop range
+                if distance is not None and self.open_sensor_stop_min <= distance <= self.open_sensor_stop_max:
+                    LOGGER.info(f"Open Sensor reading {distance} within stop range [{self.open_sensor_stop_min}, {self.open_sensor_stop_max}], stopping motor.")
+                    break # Exit the loop
+
+                # Wait for 0.5 seconds
+                await asyncio.sleep(0.5)
+        finally:
+            # Ensure motor stops regardless of how the loop exits
+            LOGGER.info("Stopping motor after open attempt.")
+            await self.motor.set_power(0.0)
 
     async def close_gate(self):
         LOGGER.info("Closing gate")
-        await self.motor.set_power(-1.0)
-        await asyncio.sleep(30)
-        await self.motor.set_power(0.0)
+        await self.motor.set_power(1.0) # Positive power for closing
+        start_time = asyncio.get_event_loop().time()
+        try:
+            while True:
+                # Check elapsed time
+                if asyncio.get_event_loop().time() - start_time >= 30.0:
+                    LOGGER.info("Close gate timed out after 30 seconds")
+                    break
+
+                # Get sensor readings from close_sensor
+                readings = await self.close_sensor.get_readings()
+                # Assuming the sensor returns a 'distance' key, adjust if necessary
+                distance = readings.get("distance")
+                LOGGER.debug(f"Close Sensor reading: {distance}")
+
+                # Check if reading is within the close_sensor stop range
+                if distance is not None and self.close_sensor_stop_min <= distance <= self.close_sensor_stop_max:
+                    LOGGER.info(f"Close Sensor reading {distance} within stop range [{self.close_sensor_stop_min}, {self.close_sensor_stop_max}], stopping motor.")
+                    break # Exit the loop
+
+                # Wait for 0.5 seconds
+                await asyncio.sleep(0.5)
+        finally:
+            # Ensure motor stops regardless of how the loop exits
+            LOGGER.info("Stopping motor after close attempt.")
+            await self.motor.set_power(0.0)
 
     async def do_command(
         self,
