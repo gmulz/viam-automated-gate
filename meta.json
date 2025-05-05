@@ -8,7 +8,7 @@
     {
       "api": "rdk:service:generic",
       "model": "grant-dev:automated-gate:gate-opener",
-      "short_description": "Provide a short (100 characters or less) description of this model here",
+      "short_description": "A service to open and close a gate/door, respecting limit sensors",
       "markdown_link": "README.md#model-grant-devautomated-gategate-opener"
     }
   ],
