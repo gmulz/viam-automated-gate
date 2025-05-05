@@ -34,6 +34,8 @@ class GateOpener(Generic, EasyResource):
     open_sensor_stop_max: float
     close_sensor_stop_min: float
     close_sensor_stop_max: float
+    open_sensor_reading_key: str
+    close_sensor_reading_key: str
 
     @classmethod
     def new(
@@ -81,6 +83,8 @@ class GateOpener(Generic, EasyResource):
                 raise Exception(f"'{sensor_config_key}' must have a numeric 'stop_min' field")
             if "stop_max" not in sensor_config:
                 raise Exception(f"'{sensor_config_key}' must have a numeric 'stop_max' field")
+            if "reading_key" not in sensor_config:
+                raise Exception(f"'{sensor_config_key}' must have a non-empty 'reading_key' field")
             if sensor_config["stop_min"] > sensor_config["stop_max"]:
                 raise Exception(f"'{sensor_config_key}' 'stop_min' cannot be greater than 'stop_max'")
 
@@ -116,6 +120,8 @@ class GateOpener(Generic, EasyResource):
         self.open_sensor_stop_max = float(open_sensor_config["stop_max"])
         self.close_sensor_stop_min = float(close_sensor_config["stop_min"])
         self.close_sensor_stop_max = float(close_sensor_config["stop_max"])
+        self.open_sensor_reading_key = open_sensor_config["reading_key"]
+        self.close_sensor_reading_key = close_sensor_config["reading_key"]
 
         if self.motor is None or self.open_sensor is None or self.close_sensor is None or self.board is None:
             raise Exception("Missing required dependencies. Check config and ensure components are running.")
@@ -136,12 +142,12 @@ class GateOpener(Generic, EasyResource):
                 # Get sensor readings from open_sensor
                 readings = await self.open_sensor.get_readings()
                 # Assuming the sensor returns a 'distance' key, adjust if necessary
-                distance = readings.get("distance")
-                LOGGER.debug(f"Open Sensor reading: {distance}")
+                reading_value = readings.get(self.open_sensor_reading_key)
+                LOGGER.debug(f"Open Sensor reading ({self.open_sensor_reading_key}): {reading_value}")
 
                 # Check if reading is within the open_sensor stop range
-                if distance is not None and self.open_sensor_stop_min <= distance <= self.open_sensor_stop_max:
-                    LOGGER.info(f"Open Sensor reading {distance} within stop range [{self.open_sensor_stop_min}, {self.open_sensor_stop_max}], stopping motor.")
+                if reading_value is None or self.open_sensor_stop_min <= reading_value <= self.open_sensor_stop_max:
+                    LOGGER.info(f"Open Sensor reading {reading_value} within stop range [{self.open_sensor_stop_min}, {self.open_sensor_stop_max}], stopping motor.")
                     break # Exit the loop
 
                 # Wait for 0.5 seconds
@@ -165,12 +171,12 @@ class GateOpener(Generic, EasyResource):
                 # Get sensor readings from close_sensor
                 readings = await self.close_sensor.get_readings()
                 # Assuming the sensor returns a 'distance' key, adjust if necessary
-                distance = readings.get("distance")
-                LOGGER.debug(f"Close Sensor reading: {distance}")
+                reading_value = readings.get(self.close_sensor_reading_key)
+                LOGGER.debug(f"Close Sensor reading ({self.close_sensor_reading_key}): {reading_value}")
 
                 # Check if reading is within the close_sensor stop range
-                if distance is not None and self.close_sensor_stop_min <= distance <= self.close_sensor_stop_max:
-                    LOGGER.info(f"Close Sensor reading {distance} within stop range [{self.close_sensor_stop_min}, {self.close_sensor_stop_max}], stopping motor.")
+                if reading_value is None or self.close_sensor_stop_min <= reading_value <= self.close_sensor_stop_max:
+                    LOGGER.info(f"Close Sensor reading {reading_value} within stop range [{self.close_sensor_stop_min}, {self.close_sensor_stop_max}], stopping motor.")
                     break # Exit the loop
 
                 # Wait for 0.5 seconds
