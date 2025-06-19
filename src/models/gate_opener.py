@@ -37,6 +37,19 @@ class GateOpener(Generic, EasyResource):
     open_sensor_reading_key: str
     close_sensor_reading_key: str
 
+    open_trigger: Optional[Sensor] = None
+    open_trigger_key: Optional[str] = None
+    open_trigger_value: Optional[str] = None
+
+    
+    close_trigger: Optional[Sensor] = None
+    close_trigger_key: Optional[str] = None
+    close_trigger_value: Optional[str] = None
+
+    trigger_poll_task: Optional[asyncio.Task] = None
+    _stop_poll_event: asyncio.Event = asyncio.Event()
+
+
     @classmethod
     def new(
         cls, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
@@ -89,6 +102,19 @@ class GateOpener(Generic, EasyResource):
                 raise Exception(f"'{sensor_config_key}' 'stop_min' cannot be greater than 'stop_max'")
 
             sensor_names.append(sensor_config["name"])
+        
+        for trigger_key in ["open-trigger", "close_trigger"]:
+            if trigger_key not in config.attributes.fields:
+                continue
+            trigger_config = struct_to_dict(config.attributes.fields[trigger_key].struct_value)
+            if "name" not in trigger_config:
+                raise Exception(f"'{trigger_key}' must have a non-empty 'name' field")
+            if "value" not in trigger_config:
+                raise Exception(f"'{trigger_key}' must have a non-empty 'value' field")
+            if "key" not in trigger_config:
+                raise Exception(f"'{trigger_key}' must have a non-empty 'key' field")
+            sensor_names.append(trigger_config["name"])
+
 
         motor_name = config.attributes.fields["motor"].string_value
         board_name = config.attributes.fields["board"].string_value
@@ -104,6 +130,9 @@ class GateOpener(Generic, EasyResource):
             config (ComponentConfig): The new configuration
             dependencies (Mapping[ResourceName, ResourceBase]): Any dependencies (both implicit and explicit)
         """
+        if self.trigger_poll_task is not None:
+            self._stop_trigger_poll_task()
+
         motor_name = config.attributes.fields["motor"].string_value
         board_name = config.attributes.fields["board"].string_value
         open_sensor_config = struct_to_dict(config.attributes.fields["open-sensor"].struct_value)
@@ -123,9 +152,26 @@ class GateOpener(Generic, EasyResource):
         self.open_sensor_reading_key = open_sensor_config["reading_key"]
         self.close_sensor_reading_key = close_sensor_config["reading_key"]
 
+        self.open_trigger = None
+        self.close_trigger = None
+        if "open-trigger" in config.attributes.fields:
+            open_trigger_config = struct_to_dict(config.attributes.fields["open-trigger"].struct_value)
+            open_trigger_name = open_trigger_config["name"]
+            self.open_trigger = dependencies[Sensor.get_resource_name(open_trigger_name)]
+            self.open_trigger_key = open_trigger_config["key"]
+            self.open_trigger_value = open_trigger_config["value"]
+        if "close-trigger" in config.attributes.fields:
+            close_trigger_config = struct_to_dict(config.attributes.fields["close-trigger"].struct_value)
+            close_trigger_name = close_trigger_config["name"]
+            self.close_trigger = dependencies[Sensor.get_resource_name(close_trigger_name)]
+            self.close_trigger_key = close_trigger_config["key"]
+            self.close_trigger_value = close_trigger_config["value"]
+
         if self.motor is None or self.open_sensor is None or self.close_sensor is None or self.board is None:
             raise Exception("Missing required dependencies. Check config and ensure components are running.")
 
+        self._stop_poll_event.clear()
+        self.trigger_poll_task = asyncio.create_task(self._poll_triggers())
         return super().reconfigure(config, dependencies)
 
     async def open_gate(self):
@@ -184,6 +230,38 @@ class GateOpener(Generic, EasyResource):
         finally:
             # Ensure motor stops regardless of how the loop exits
             LOGGER.info("Stopping motor after close attempt.")
+            await self.motor.set_power(0.0)
+
+    def _stop_trigger_poll_task(self):
+        self._stop_poll_event.set()
+        if self.trigger_poll_task:
+            self.trigger_poll_task.cancel()
+            self.trigger_poll_task = None
+
+    async def _poll_triggers(self):
+        try:
+            while not self._stop_poll_event.is_set():
+                if self.open_trigger is not None:
+                    readings = await self.open_trigger.get_readings()
+                    if readings.get(self.open_trigger_key) == self.open_trigger_value:
+                        LOGGER.info("Open trigger activated")
+                        await self.open_gate()
+
+                if self.close_trigger is not None:
+                    readings = await self.close_trigger.get_readings()
+                    if str(readings.get(self.close_trigger_key)) == self.close_trigger_value:
+                        LOGGER.info("Close trigger activated")
+                        await self.close_gate()
+                
+                await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            LOGGER.error(f"Error polling triggers: {e}")
+
+    async def close(self):
+        self._stop_trigger_poll_task()
+        if self.motor:
             await self.motor.set_power(0.0)
 
     async def do_command(
