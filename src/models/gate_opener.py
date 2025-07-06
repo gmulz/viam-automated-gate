@@ -49,6 +49,8 @@ class GateOpener(Generic, EasyResource):
     trigger_poll_task: Optional[asyncio.Task] = None
     _stop_poll_event: asyncio.Event = asyncio.Event()
 
+    open_to_close_timeout: float = 30.0
+
 
     @classmethod
     def new(
@@ -166,6 +168,9 @@ class GateOpener(Generic, EasyResource):
             self.close_trigger = dependencies[Sensor.get_resource_name(close_trigger_name)]
             self.close_trigger_key = close_trigger_config["key"]
             self.close_trigger_value = close_trigger_config["value"]
+        
+        if "open-to-close-timeout" in config.attributes.fields:
+            self.open_to_close_timeout = float(config.attributes.fields["open-to-close-timeout"].number_value)
 
         if self.motor is None or self.open_sensor is None or self.close_sensor is None or self.board is None:
             raise Exception("Missing required dependencies. Check config and ensure components are running.")
@@ -196,7 +201,7 @@ class GateOpener(Generic, EasyResource):
                     LOGGER.info(f"Open Sensor reading {reading_value} within stop range [{self.open_sensor_stop_min}, {self.open_sensor_stop_max}], stopping motor.")
                     break # Exit the loop
 
-                # Wait for 0.5 seconds
+                # Wait for 0.1 seconds
                 await asyncio.sleep(0.1)
         finally:
             # Ensure motor stops regardless of how the loop exits
@@ -204,14 +209,20 @@ class GateOpener(Generic, EasyResource):
             await self.motor.set_power(0.0)
 
     async def close_gate(self):
+        # locate will home the gate to open if it is not at a known position
+        gate_state = await self.locate()
+        if gate_state == "closed":
+            LOGGER.info("Gate is already closed")
+            return
+        
         LOGGER.info("Closing gate")
         await self.motor.set_power(1.0) # Positive power for closing
         start_time = asyncio.get_event_loop().time()
         try:
             while True:
                 # Check elapsed time
-                if asyncio.get_event_loop().time() - start_time >= 30.0:
-                    LOGGER.info("Close gate timed out after 30 seconds")
+                if asyncio.get_event_loop().time() - start_time >= self.open_to_close_timeout:
+                    LOGGER.info(f"Close gate timed out after {self.open_to_close_timeout} seconds")
                     break
 
                 # Get sensor readings from close_sensor
@@ -231,6 +242,35 @@ class GateOpener(Generic, EasyResource):
             # Ensure motor stops regardless of how the loop exits
             LOGGER.info("Stopping motor after close attempt.")
             await self.motor.set_power(0.0)
+
+    async def home(self):
+        LOGGER.info("Homing gate")
+        await self.motor.set_power(-1.0)
+        start_time = asyncio.get_event_loop().time()
+        try:
+            while True:
+                if asyncio.get_event_loop().time() - start_time >= 30.0:
+                    LOGGER.info("Home timed out after 30 seconds")
+                    break
+                await asyncio.sleep(0.1)
+        finally:
+            LOGGER.info("Stopping motor after home attempt.")
+            await self.motor.set_power(0.0)
+
+    async def locate(self):
+        LOGGER.info("Locating gate")
+        open_readings = await self.open_sensor.get_readings()
+        open_reading_value = open_readings.get(self.open_sensor_reading_key)
+        if open_reading_value is not None and self.open_sensor_stop_min <= open_reading_value <= self.open_sensor_stop_max:
+            LOGGER.info("Open sensor indicates gate is open")
+            return "open"
+        close_readings = await self.close_sensor.get_readings()
+        close_reading_value = close_readings.get(self.close_sensor_reading_key)
+        if close_reading_value is not None and self.close_sensor_stop_min <= close_reading_value <= self.close_sensor_stop_max:
+            LOGGER.info("Close sensor indicates gate is closed")
+            return "closed"
+        await self.home()
+        return "open"
 
     def _stop_trigger_poll_task(self):
         self._stop_poll_event.set()
