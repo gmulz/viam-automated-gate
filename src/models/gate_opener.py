@@ -186,8 +186,8 @@ class GateOpener(Generic, EasyResource):
         try:
             while True:
                 # Check elapsed time
-                if asyncio.get_event_loop().time() - start_time >= 30.0:
-                    LOGGER.info("Open gate timed out after 30 seconds")
+                if asyncio.get_event_loop().time() - start_time >= self.open_to_close_timeout * 1.5:
+                    LOGGER.info(f"Open gate timed out after {self.open_to_close_timeout * 1.5} seconds")
                     break
 
                 # Get sensor readings from open_sensor
@@ -244,18 +244,8 @@ class GateOpener(Generic, EasyResource):
             await self.motor.set_power(0.0)
 
     async def home(self):
-        LOGGER.info("Homing gate")
-        await self.motor.set_power(-1.0)
-        start_time = asyncio.get_event_loop().time()
-        try:
-            while True:
-                if asyncio.get_event_loop().time() - start_time >= 30.0:
-                    LOGGER.info("Home timed out after 30 seconds")
-                    break
-                await asyncio.sleep(0.1)
-        finally:
-            LOGGER.info("Stopping motor after home attempt.")
-            await self.motor.set_power(0.0)
+        LOGGER.info("Homing gate to open position")
+        await self.open_gate()
 
     async def locate(self):
         LOGGER.info("Locating gate")
