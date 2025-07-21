@@ -183,6 +183,10 @@ class GateOpener(Generic, EasyResource):
         self._stop_poll_event.clear()
         self.trigger_poll_task = asyncio.create_task(self._poll_triggers())
         return super().reconfigure(config, dependencies)
+    
+    async def stop_gate(self):
+        LOGGER.info("Stopping gate")
+        await self.motor.set_power(0.0)
 
     async def open_gate(self):
         LOGGER.info("Opening gate")
@@ -211,7 +215,7 @@ class GateOpener(Generic, EasyResource):
         finally:
             # Ensure motor stops regardless of how the loop exits
             LOGGER.info("Stopping motor after open attempt.")
-            await self.motor.set_power(0.0)
+            await self.stop_gate()
 
     async def close_gate(self):
         # locate will home the gate to open if it is not at a known position
@@ -246,7 +250,7 @@ class GateOpener(Generic, EasyResource):
         finally:
             # Ensure motor stops regardless of how the loop exits
             LOGGER.info("Stopping motor after close attempt.")
-            await self.motor.set_power(0.0)
+            await self.stop_gate()
 
     async def home(self):
         LOGGER.info("Homing gate to open position")
@@ -303,9 +307,6 @@ class GateOpener(Generic, EasyResource):
         if self.motor:
             await self.motor.set_power(0.0)
     
-    async def stop_gate(self):
-        if self.motor:
-            await self.motor.set_power(0.0)
 
     async def do_command(
         self,
