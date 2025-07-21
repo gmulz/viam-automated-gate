@@ -264,6 +264,8 @@ class GateOpener(Generic, EasyResource):
         if close_reading_value is not None and self.close_sensor_stop_min <= close_reading_value <= self.close_sensor_stop_max:
             LOGGER.info("Close sensor indicates gate is closed")
             return "closed"
+        # unknown gate state, at neither close nor open
+        # home the gate to the open position
         await self.home()
         return "open"
 
@@ -298,6 +300,10 @@ class GateOpener(Generic, EasyResource):
         self._stop_trigger_poll_task()
         if self.motor:
             await self.motor.set_power(0.0)
+    
+    async def stop(self):
+        if self.motor:
+            await self.motor.set_power(0.0)
 
     async def do_command(
         self,
@@ -309,8 +315,13 @@ class GateOpener(Generic, EasyResource):
         LOGGER.info(f"do_command called with command: {command}")
         if command.get("open"):
             await self.open_gate()
+            return {"status": "opened"}
         elif command.get("close"):
             await self.close_gate()
+            return {"status": "closed"}
+        elif command.get("stop"):
+            await self.stop()
+            return {"status": "stopped"}
         else:
             raise Exception("Invalid command")
 
