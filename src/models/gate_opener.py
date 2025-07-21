@@ -296,12 +296,14 @@ class GateOpener(Generic, EasyResource):
         except Exception as e:
             LOGGER.error(f"Error polling triggers: {e}")
 
+    # shut down the service. 
+    # not the action to close the gate.
     async def close(self):
         self._stop_trigger_poll_task()
         if self.motor:
             await self.motor.set_power(0.0)
     
-    async def stop(self):
+    async def stop_gate(self):
         if self.motor:
             await self.motor.set_power(0.0)
 
@@ -320,7 +322,7 @@ class GateOpener(Generic, EasyResource):
             await self.close_gate()
             return {"status": "closed"}
         elif command.get("stop"):
-            await self.stop()
+            await self.stop_gate()
             return {"status": "stopped"}
         else:
             raise Exception("Invalid command")
