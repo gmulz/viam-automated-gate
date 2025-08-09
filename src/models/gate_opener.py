@@ -68,6 +68,7 @@ class GateOpener(Generic, EasyResource):
         Returns:
             Self: The resource
         """
+        cls._lock = asyncio.Lock()
         return super().new(config, dependencies)
 
     @classmethod
@@ -316,15 +317,18 @@ class GateOpener(Generic, EasyResource):
         **kwargs
     ) -> Mapping[str, ValueTypes]:
         LOGGER.info(f"do_command called with command: {command}")
-        if command.get("open"):
-            await self.open_gate()
-            return {"status": "opened"}
-        elif command.get("close"):
-            await self.close_gate()
-            return {"status": "closed"}
-        elif command.get("stop"):
-            await self.stop_gate()
-            return {"status": "stopped"}
-        else:
-            raise Exception("Invalid command")
+        if self._lock.locked():
+            return {"status": "busy"}
+        async with self._lock:
+            if command.get("open"):
+                await self.open_gate()
+                return {"status": "opened"}
+            elif command.get("close"):
+                await self.close_gate()
+                return {"status": "closed"}
+            elif command.get("stop"):
+                await self.stop_gate()
+                return {"status": "stopped"}
+            else:
+                raise Exception("Invalid command")
 
