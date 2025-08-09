@@ -52,6 +52,8 @@ class GateOpener(Generic, EasyResource):
     open_to_close_timeout: float = 30.0
 
     motor_power: float = 1.0
+    motor_power_open: float = 1.0
+    motor_power_close: float = 1.0
 
 
     @classmethod
@@ -177,6 +179,13 @@ class GateOpener(Generic, EasyResource):
         
         if "motor-power" in config.attributes.fields:
             self.motor_power = float(config.attributes.fields["motor-power"].number_value)
+            self.motor_power_open = self.motor_power
+            self.motor_power_close = self.motor_power
+
+        if "motor-power-open" in config.attributes.fields:
+            self.motor_power_open = float(config.attributes.fields["motor-power-open"].number_value)
+        if "motor-power-close" in config.attributes.fields:
+            self.motor_power_close = float(config.attributes.fields["motor-power-close"].number_value)
 
         if self.motor is None or self.open_sensor is None or self.close_sensor is None or self.board is None:
             raise Exception("Missing required dependencies. Check config and ensure components are running.")
@@ -191,7 +200,7 @@ class GateOpener(Generic, EasyResource):
 
     async def open_gate(self):
         LOGGER.info("Opening gate")
-        await self.motor.set_power(-self.motor_power)
+        await self.motor.set_power(-self.motor_power_open)
         start_time = asyncio.get_event_loop().time()
         try:
             while True:
@@ -226,7 +235,7 @@ class GateOpener(Generic, EasyResource):
             return
         
         LOGGER.info("Closing gate")
-        await self.motor.set_power(self.motor_power) # Positive power for closing
+        await self.motor.set_power(self.motor_power_close) # Positive power for closing
         start_time = asyncio.get_event_loop().time()
         try:
             while True:
