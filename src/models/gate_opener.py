@@ -222,6 +222,8 @@ class GateOpener(Generic, EasyResource):
 
                 # Wait for 0.1 seconds
                 await asyncio.sleep(0.1)
+        except Exception as e:
+            LOGGER.error(f"Error opening gate: {e}")
         finally:
             # Ensure motor stops regardless of how the loop exits
             LOGGER.info("Stopping motor after open attempt.")
@@ -257,6 +259,8 @@ class GateOpener(Generic, EasyResource):
 
                 # Wait for 0.5 seconds
                 await asyncio.sleep(0.1)
+        except Exception as e:
+            LOGGER.error(f"Error closing gate: {e}")
         finally:
             # Ensure motor stops regardless of how the loop exits
             LOGGER.info("Stopping motor after close attempt.")
