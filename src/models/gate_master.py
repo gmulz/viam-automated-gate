@@ -1,4 +1,4 @@
-from typing import ClassVar, Mapping, Optional, Sequence
+from typing import ClassVar, Mapping, Optional, Sequence, Tuple
 import asyncio
 
 from typing_extensions import Self
