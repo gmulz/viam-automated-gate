@@ -29,7 +29,9 @@ class GateMaster(Generic, EasyResource):
     def new (
         cls, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
     ) -> Self:
-        return super().new(config, dependencies)
+        service = cls(config.name)
+        service.reconfigure(config, dependencies)
+        return service
     
     @classmethod
     def validate_config(cls, config: ComponentConfig) -> Sequence[str]:
