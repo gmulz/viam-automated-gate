@@ -222,10 +222,10 @@ class GateOpener(Generic, EasyResource):
     async def locate(self):
         LOGGER.info("Locating gate")
         position = await self.get_position()
-        if position is not None and self.open_position_stop_min <= position <= self.open_position_stop_max:
+        if position is not None and self.open_position_stop_min * 0.95 <= position <= self.open_position_stop_max * 1.05:
             LOGGER.info("Position sensor indicates gate is open")
             return "open"
-        if position is not None and self.close_position_stop_min <= position <= self.close_position_stop_max:
+        if position is not None and self.close_position_stop_min * 0.95 <= position <= self.close_position_stop_max * 1.05:
             LOGGER.info("Position sensor indicates gate is closed")
             return "closed"
         # unknown gate state, at neither close nor open
@@ -254,7 +254,7 @@ class GateOpener(Generic, EasyResource):
         LOGGER.info(f"do_command called with command: {command}")
         # read position and status not guarded by lock
         if command.get("position"):
-                return {"status": "position", "position": await self.get_position()}
+                return {"position": await self.get_position()}
         elif command.get("status"):
             return {"status": await self.locate()}
         elif command.get("stop"):

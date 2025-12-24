@@ -34,7 +34,7 @@ class GateMaster(Generic, EasyResource):
         return service
     
     @classmethod
-    def validate_config(cls, config: ComponentConfig) -> Sequence[str]:
+    def validate_config(cls, config: ComponentConfig) -> Tuple[Sequence[str], Sequence[str]]:
         if "primary-gate-opener" not in config.attributes.fields:
             raise Exception("Config must include a 'primary-gate-opener' attribute")
         if "secondary-gate-opener" not in config.attributes.fields:
@@ -43,7 +43,7 @@ class GateMaster(Generic, EasyResource):
         primary_gate_opener_name = config.attributes.fields["primary-gate-opener"].string_value
         secondary_gate_opener_name = config.attributes.fields["secondary-gate-opener"].string_value
         
-        return [primary_gate_opener_name, secondary_gate_opener_name]
+        return [primary_gate_opener_name, secondary_gate_opener_name], []
     
     def reconfigure(self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]):
         primary_gate_opener_name = config.attributes.fields["primary-gate-opener"].string_value
@@ -52,7 +52,6 @@ class GateMaster(Generic, EasyResource):
         self.primary_gate_opener = dependencies[GateOpener.get_resource_name(primary_gate_opener_name)]
         self.secondary_gate_opener = dependencies[GateOpener.get_resource_name(secondary_gate_opener_name)]
         
-        return super().reconfigure(config, dependencies)
     
     async def do_command(
         self, 
@@ -71,7 +70,8 @@ class GateMaster(Generic, EasyResource):
             await self.primary_gate_opener.do_command({"close": True})
             # confirm primary gate has closed
             await self.primary_gate_opener.do_command({"status": True})
-            if await self.primary_gate_opener.do_command({"status": True}) != "closed":
+            primary_status = await self.primary_gate_opener.do_command({"status": True})
+            if primary_status["status"] != "closed":
                 raise Exception("Primary gate failed to close")
             await self.secondary_gate_opener.do_command({"close": True})
             return await self.secondary_gate_opener.do_command({"status": True})
@@ -79,6 +79,10 @@ class GateMaster(Generic, EasyResource):
             await self.primary_gate_opener.do_command({"stop": True})
             await self.secondary_gate_opener.do_command({"stop": True})
             return {"status": "stopped"}
+        elif command.get("position"):
+            return {"primary_position": await self.primary_gate_opener.do_command({"position": True}), "secondary_position": await self.secondary_gate_opener.do_command({"position": True})}
+        elif command.get("status"):
+            return {"primary_status": await self.primary_gate_opener.do_command({"status": True}), "secondary_status": await self.secondary_gate_opener.do_command({"status": True})}
         else:
             raise Exception("Invalid command")
 
