@@ -128,6 +128,7 @@ class GateOpener(Generic, EasyResource):
 
         motor_name = config.attributes.fields["motor"].string_value
         board_name = config.attributes.fields["board"].string_value
+        position_sensor_name = sensor_config["name"].string_value
 
         return [motor_name, position_sensor_name, board_name]
 
@@ -146,6 +147,7 @@ class GateOpener(Generic, EasyResource):
         motor_name = config.attributes.fields["motor"].string_value
         board_name = config.attributes.fields["board"].string_value
         position_sensor_config = struct_to_dict(config.attributes.fields["position-sensor"].struct_value)
+        position_sensor_name = position_sensor_config["name"]
         
         self.motor = dependencies[Motor.get_resource_name(motor_name)]
         self.board = dependencies[Board.get_resource_name(board_name)]
