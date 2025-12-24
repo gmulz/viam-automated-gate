@@ -58,10 +58,10 @@ class GateOpener(Generic, EasyResource):
         """
         
         service = cls(config.name)
+        service._lock = asyncio.Lock()
         service.reconfigure(config, dependencies)
-        self._lock = asyncio.Lock()
         return service
-        
+        # return super().new(config, dependencies)
 
     @classmethod
     def validate_config(cls, config: ComponentConfig) -> Tuple[Sequence[str], Sequence[str]]:
