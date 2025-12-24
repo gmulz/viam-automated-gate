@@ -1,4 +1,4 @@
-from typing import ClassVar, Final, Mapping, Optional, Sequence
+from typing import ClassVar, Final, Mapping, Optional, Sequence, Tuple
 import asyncio
 
 from typing_extensions import Self
@@ -56,11 +56,15 @@ class GateOpener(Generic, EasyResource):
         Returns:
             Self: The resource
         """
-        cls._lock = asyncio.Lock()
-        return super().new(config, dependencies)
+        
+        service = cls(config.name)
+        service.reconfigure(config, dependencies)
+        self._lock = asyncio.Lock()
+        return service
+        
 
     @classmethod
-    def validate_config(cls, config: ComponentConfig) -> Sequence[str]:
+    def validate_config(cls, config: ComponentConfig) -> Tuple[Sequence[str], Sequence[str]]:
         """This method allows you to validate the configuration object received from the machine,
         as well as to return any implicit dependencies based on that `config`.
 
@@ -101,7 +105,7 @@ class GateOpener(Generic, EasyResource):
         board_name = config.attributes.fields["board"].string_value
         position_sensor_name = sensor_config["name"]
 
-        return [motor_name, position_sensor_name, board_name]
+        return [motor_name, position_sensor_name, board_name], []
 
     def reconfigure(
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
@@ -120,6 +124,9 @@ class GateOpener(Generic, EasyResource):
         self.motor = dependencies[Motor.get_resource_name(motor_name)]
         self.board = dependencies[Board.get_resource_name(board_name)]
         self.position_sensor = dependencies[Sensor.get_resource_name(position_sensor_name)]
+
+        LOGGER.info(f"Reconfigured GateOpener with motor: {motor_name}, board: {board_name}, position_sensor: {position_sensor_name}")
+        LOGGER.info(f"position_sensor: {self.position_sensor}")
 
         self.open_position_stop_min = float(position_sensor_config["open_min"])
         self.open_position_stop_max = float(position_sensor_config["open_max"])
@@ -143,7 +150,7 @@ class GateOpener(Generic, EasyResource):
         if self.motor is None or self.position_sensor is None or self.board is None:
             raise Exception("Missing required dependencies. Check config and ensure components are running.")
 
-        return super().reconfigure(config, dependencies)
+        # return super().reconfigure(config, dependencies)
     
     async def stop_gate(self):
         LOGGER.info("Stopping gate")
