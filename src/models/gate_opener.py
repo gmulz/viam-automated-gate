@@ -87,7 +87,7 @@ class GateOpener(Generic, EasyResource):
         if "motor" not in config.attributes.fields:
             raise Exception("Config must include a 'motor' attribute")
         if "position-sensor" not in config.attributes.fields:
-            raise Exception("Config must include an 'open-sensor' attribute (object)")
+            raise Exception("Config must include a 'position-sensor' attribute (object)")
 
         sensor_names = []
         
