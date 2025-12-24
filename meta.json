@@ -1,17 +1,9 @@
 {
   "$schema": "https://dl.viam.dev/module.schema.json",
   "module_id": "grant-dev:automated-gate",
-  "visibility": "public_unlisted",
+  "visibility": "private",
   "url": "https://github.com/gmulz/viam-automated-gate",
   "description": "Modular generic service: gate-opener",
-  "models": [
-    {
-      "api": "rdk:service:generic",
-      "model": "grant-dev:automated-gate:gate-opener",
-      "short_description": "A service to open and close a gate/door, respecting limit sensors",
-      "markdown_link": "README.md#model-grant-devautomated-gategate-opener"
-    }
-  ],
   "applications": null,
   "entrypoint": "reload.sh",
   "first_run": "",

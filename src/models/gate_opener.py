@@ -27,15 +27,13 @@ class GateOpener(Generic, EasyResource):
     )
 
     motor: Motor
-    open_sensor: Sensor
-    close_sensor: Sensor
+    position_sensor: Sensor
     board: Board
-    open_sensor_stop_min: float
-    open_sensor_stop_max: float
-    close_sensor_stop_min: float
-    close_sensor_stop_max: float
-    open_sensor_reading_key: str
-    close_sensor_reading_key: str
+    open_position_stop_min: float
+    open_position_stop_max: float
+    close_position_stop_min: float
+    close_position_stop_max: float
+    position_reading_key: str
 
     open_trigger: Optional[Sensor] = None
     open_trigger_key: Optional[str] = None
@@ -88,27 +86,32 @@ class GateOpener(Generic, EasyResource):
             raise Exception("Config must include a 'board' attribute")
         if "motor" not in config.attributes.fields:
             raise Exception("Config must include a 'motor' attribute")
-        if "open-sensor" not in config.attributes.fields:
+        if "position-sensor" not in config.attributes.fields:
             raise Exception("Config must include an 'open-sensor' attribute (object)")
-        if "close-sensor" not in config.attributes.fields:
-            raise Exception("Config must include a 'close-sensor' attribute (object)")
 
         sensor_names = []
-        for sensor_config_key in ["open-sensor", "close-sensor"]:
-            sensor_config = struct_to_dict(config.attributes.fields[sensor_config_key].struct_value)
+        
+        sensor_config = struct_to_dict(config.attributes.fields["position-sensor"].struct_value)
 
-            if "name" not in sensor_config:
-                raise Exception(f"'{sensor_config_key}' must have a non-empty 'name' field")
-            if "stop_min" not in sensor_config:
-                raise Exception(f"'{sensor_config_key}' must have a numeric 'stop_min' field")
-            if "stop_max" not in sensor_config:
-                raise Exception(f"'{sensor_config_key}' must have a numeric 'stop_max' field")
-            if "reading_key" not in sensor_config:
-                raise Exception(f"'{sensor_config_key}' must have a non-empty 'reading_key' field")
-            if sensor_config["stop_min"] > sensor_config["stop_max"]:
-                raise Exception(f"'{sensor_config_key}' 'stop_min' cannot be greater than 'stop_max'")
+        if "name" not in sensor_config:
+            raise Exception(f"'{sensor_config_key}' must have a non-empty 'name' field")
+        if "open_min" not in sensor_config:
+            raise Exception(f"'{sensor_config_key}' must have a numeric 'open_min' field")
+        if "open_max" not in sensor_config:
+            raise Exception(f"'{sensor_config_key}' must have a numeric 'open_max' field")
+        if "close_min" not in sensor_config:
+            raise Exception(f"'{sensor_config_key}' must have a numeric 'close_min' field")
+        if "close_max" not in sensor_config:
+            raise Exception(f"'{sensor_config_key}' must have a numeric 'close_max' field")
+        if "reading_key" not in sensor_config:
+            raise Exception(f"'{sensor_config_key}' must have a non-empty 'reading_key' field")
 
-            sensor_names.append(sensor_config["name"])
+        if sensor_config["open_min"] > sensor_config["open_max"]:
+            raise Exception(f"'{sensor_config_key}' 'open_min' cannot be greater than 'open_max'")
+        if sensor_config["close_min"] > sensor_config["close_max"]:
+            raise Exception(f"'{sensor_config_key}' 'close_min' cannot be greater than 'close_max'")
+
+        
         
         for trigger_key in ["open-trigger", "close_trigger"]:
             if trigger_key not in config.attributes.fields:
@@ -126,7 +129,7 @@ class GateOpener(Generic, EasyResource):
         motor_name = config.attributes.fields["motor"].string_value
         board_name = config.attributes.fields["board"].string_value
 
-        return [motor_name] + sensor_names + [board_name]
+        return [motor_name, position_sensor_name, board_name]
 
     def reconfigure(
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
@@ -142,22 +145,17 @@ class GateOpener(Generic, EasyResource):
 
         motor_name = config.attributes.fields["motor"].string_value
         board_name = config.attributes.fields["board"].string_value
-        open_sensor_config = struct_to_dict(config.attributes.fields["open-sensor"].struct_value)
-        close_sensor_config = struct_to_dict(config.attributes.fields["close-sensor"].struct_value)
-        open_sensor_name = open_sensor_config["name"]
-        close_sensor_name = close_sensor_config["name"]
-
+        position_sensor_config = struct_to_dict(config.attributes.fields["position-sensor"].struct_value)
+        
         self.motor = dependencies[Motor.get_resource_name(motor_name)]
         self.board = dependencies[Board.get_resource_name(board_name)]
-        self.open_sensor = dependencies[Sensor.get_resource_name(open_sensor_name)]
-        self.close_sensor = dependencies[Sensor.get_resource_name(close_sensor_name)]
+        self.position_sensor = dependencies[Sensor.get_resource_name(position_sensor_name)]
 
-        self.open_sensor_stop_min = float(open_sensor_config["stop_min"])
-        self.open_sensor_stop_max = float(open_sensor_config["stop_max"])
-        self.close_sensor_stop_min = float(close_sensor_config["stop_min"])
-        self.close_sensor_stop_max = float(close_sensor_config["stop_max"])
-        self.open_sensor_reading_key = open_sensor_config["reading_key"]
-        self.close_sensor_reading_key = close_sensor_config["reading_key"]
+        self.open_position_stop_min = float(position_sensor_config["open_min"])
+        self.open_position_stop_max = float(position_sensor_config["open_max"])
+        self.close_position_stop_min = float(position_sensor_config["close_min"])
+        self.close_position_stop_max = float(position_sensor_config["close_max"])
+        self.position_reading_key = position_sensor_config["reading_key"]
 
         self.open_trigger = None
         self.close_trigger = None
@@ -209,15 +207,13 @@ class GateOpener(Generic, EasyResource):
                     LOGGER.info(f"Open gate timed out after {self.open_to_close_timeout * 1.5} seconds")
                     break
 
-                # Get sensor readings from open_sensor
-                readings = await self.open_sensor.get_readings()
-                # Assuming the sensor returns a 'distance' key, adjust if necessary
-                reading_value = readings.get(self.open_sensor_reading_key)
-                LOGGER.debug(f"Open Sensor reading ({self.open_sensor_reading_key}): {reading_value}")
+                # Get sensor readings from position_sensor
+                position = await self.get_position()
+                LOGGER.debug(f"Position Sensor reading ({self.position_reading_key}): {position}")
 
                 # Check if reading is within the open_sensor stop range
-                if reading_value is None or self.open_sensor_stop_min <= reading_value <= self.open_sensor_stop_max:
-                    LOGGER.info(f"Open Sensor reading {reading_value} within stop range [{self.open_sensor_stop_min}, {self.open_sensor_stop_max}], stopping motor.")
+                if position is None or self.open_position_stop_min <= position <= self.open_position_stop_max:
+                    LOGGER.info(f"Position Sensor reading {position} within stop range [{self.open_position_stop_min}, {self.open_position_stop_max}], stopping motor.")
                     break # Exit the loop
 
                 # Wait for 0.1 seconds
@@ -230,7 +226,6 @@ class GateOpener(Generic, EasyResource):
             await self.stop_gate()
 
     async def close_gate(self):
-        # locate will home the gate to open if it is not at a known position
         gate_state = await self.locate()
         if gate_state == "closed":
             LOGGER.info("Gate is already closed")
@@ -246,15 +241,13 @@ class GateOpener(Generic, EasyResource):
                     LOGGER.info(f"Close gate timed out after {self.open_to_close_timeout} seconds")
                     break
 
-                # Get sensor readings from close_sensor
-                readings = await self.close_sensor.get_readings()
-                # Assuming the sensor returns a 'distance' key, adjust if necessary
-                reading_value = readings.get(self.close_sensor_reading_key)
-                LOGGER.debug(f"Close Sensor reading ({self.close_sensor_reading_key}): {reading_value}")
+                # Get sensor readings from position_sensor
+                position = await self.get_position()
+                LOGGER.debug(f"Position Sensor reading ({self.position_reading_key}): {position}")
 
                 # Check if reading is within the close_sensor stop range
-                if reading_value is None or self.close_sensor_stop_min <= reading_value <= self.close_sensor_stop_max:
-                    LOGGER.info(f"Close Sensor reading {reading_value} within stop range [{self.close_sensor_stop_min}, {self.close_sensor_stop_max}], stopping motor.")
+                if position is None or self.close_position_stop_min <= position <= self.close_position_stop_max:
+                    LOGGER.info(f"Position Sensor reading {position} within stop range [{self.close_position_stop_min}, {self.close_position_stop_max}], stopping motor.")
                     break # Exit the loop
 
                 # Wait for 0.5 seconds
@@ -266,26 +259,17 @@ class GateOpener(Generic, EasyResource):
             LOGGER.info("Stopping motor after close attempt.")
             await self.stop_gate()
 
-    async def home(self):
-        LOGGER.info("Homing gate to open position")
-        await self.open_gate()
-
     async def locate(self):
         LOGGER.info("Locating gate")
-        open_readings = await self.open_sensor.get_readings()
-        open_reading_value = open_readings.get(self.open_sensor_reading_key)
-        if open_reading_value is not None and self.open_sensor_stop_min <= open_reading_value <= self.open_sensor_stop_max:
-            LOGGER.info("Open sensor indicates gate is open")
+        position = await self.get_position()
+        if position is not None and self.open_position_stop_min <= position <= self.open_position_stop_max:
+            LOGGER.info("Position sensor indicates gate is open")
             return "open"
-        close_readings = await self.close_sensor.get_readings()
-        close_reading_value = close_readings.get(self.close_sensor_reading_key)
-        if close_reading_value is not None and self.close_sensor_stop_min <= close_reading_value <= self.close_sensor_stop_max:
-            LOGGER.info("Close sensor indicates gate is closed")
+        if position is not None and self.close_position_stop_min <= position <= self.close_position_stop_max:
+            LOGGER.info("Position sensor indicates gate is closed")
             return "closed"
         # unknown gate state, at neither close nor open
-        # home the gate to the open position
-        await self.home()
-        return "open"
+        return "unknown"
 
     def _stop_trigger_poll_task(self):
         self._stop_poll_event.set()
@@ -320,6 +304,11 @@ class GateOpener(Generic, EasyResource):
         self._stop_trigger_poll_task()
         if self.motor:
             await self.motor.set_power(0.0)
+
+    async def get_position(self):
+        readings = await self.position_sensor.get_readings()
+        reading_value = readings.get(self.position_reading_key)
+        return reading_value
     
 
     async def do_command(
@@ -335,13 +324,17 @@ class GateOpener(Generic, EasyResource):
         async with self._lock:
             if command.get("open"):
                 await self.open_gate()
-                return {"status": "opened"}
+                return {"status": await self.locate()}
             elif command.get("close"):
                 await self.close_gate()
-                return {"status": "closed"}
+                return {"status": await self.locate()}
             elif command.get("stop"):
                 await self.stop_gate()
                 return {"status": "stopped"}
+            elif command.get("position"):
+                return {"status": "position", "position": await self.get_position()}
+            elif command.get("status"):
+                return {"status": await self.locate()}
             else:
                 raise Exception("Invalid command")
 
