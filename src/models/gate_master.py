@@ -1,5 +1,19 @@
-from viam.services.generic import Generic
+from typing import ClassVar, Mapping, Optional, Sequence
+import asyncio
+
+from typing_extensions import Self
+from viam.proto.app.robot import ComponentConfig
+from viam.proto.common import ResourceName
+from viam.resource.base import ResourceBase
 from viam.resource.easy_resource import EasyResource
+from viam.resource.types import Model, ModelFamily
+from viam.services.generic import *
+from viam.utils import ValueTypes
+from viam import logging
+
+from .gate_opener import GateOpener
+
+LOGGER = logging.getLogger(__name__)
 
 class GateMaster(Generic, EasyResource):
     MODEL: ClassVar[Model] = Model(
