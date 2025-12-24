@@ -5,11 +5,13 @@
   "url": "https://github.com/gmulz/viam-automated-gate",
   "description": "Modular generic service: gate-opener",
   "applications": null,
-  "entrypoint": "reload.sh",
+  "entrypoint": "dist/main",
   "first_run": "",
+  "markdown_link": "README.md",
   "build": {
-    "build": "rm -f module.tar.gz && tar czf module.tar.gz requirements.txt src/*.py src/models/*.py meta.json setup.sh reload.sh && chmod 777 module.tar.gz",
-    "path": "module.tar.gz",
+    "build": "./build.sh",
+    "setup": "./setup.sh",
+    "path": "dist/archive.tar.gz",
     "arch": ["linux/amd64", "linux/arm64"]
   }
 }
