@@ -319,6 +319,15 @@ class GateOpener(Generic, EasyResource):
         **kwargs
     ) -> Mapping[str, ValueTypes]:
         LOGGER.info(f"do_command called with command: {command}")
+        # read position and status not guarded by lock
+        if command.get("position"):
+                return {"status": "position", "position": await self.get_position()}
+        elif command.get("status"):
+            return {"status": await self.locate()}
+        elif command.get("stop"):
+            await self.stop_gate()
+            return {"status": "stopped"}
+        # actuation commands guarded by lock
         if self._lock.locked():
             return {"status": "busy"}
         async with self._lock:
@@ -328,13 +337,5 @@ class GateOpener(Generic, EasyResource):
             elif command.get("close"):
                 await self.close_gate()
                 return {"status": await self.locate()}
-            elif command.get("stop"):
-                await self.stop_gate()
-                return {"status": "stopped"}
-            elif command.get("position"):
-                return {"status": "position", "position": await self.get_position()}
-            elif command.get("status"):
-                return {"status": await self.locate()}
-            else:
-                raise Exception("Invalid command")
+        raise Exception("Invalid command")
 
