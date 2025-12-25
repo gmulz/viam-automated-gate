@@ -239,9 +239,17 @@ class GateOpener(Generic, EasyResource):
             await motor.set_power(0.0)
 
     async def get_position(self):
-        readings = await self.position_sensor.get_readings()
-        reading_value = readings.get(self.position_reading_key)
-        return reading_value
+        values = []
+        for i in range(5):
+            readings = await self.position_sensor.get_readings()
+            reading_value = readings.get(self.position_reading_key)
+            if reading_value is not None:
+                values.append(reading_value)
+            if i < 4:
+                await asyncio.sleep(0.02)
+        if not values:
+            return None
+        return sum(values) / len(values)
     
 
     async def do_command(

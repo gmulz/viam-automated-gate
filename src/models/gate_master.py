@@ -67,12 +67,11 @@ class GateMaster(Generic, EasyResource):
             await self.primary_gate_opener.do_command({"open": True})
             return await self.primary_gate_opener.do_command({"status": True})
         elif command.get("close"):
-            await self.primary_gate_opener.do_command({"close": True})
+            primary_status = await self.primary_gate_opener.do_command({"close": True})
             # confirm primary gate has closed
-            await self.primary_gate_opener.do_command({"status": True})
-            primary_status = await self.primary_gate_opener.do_command({"status": True})
             if primary_status["status"] != "closed":
                 raise Exception("Primary gate failed to close")
+                
             await self.secondary_gate_opener.do_command({"close": True})
             return await self.secondary_gate_opener.do_command({"status": True})
         elif command.get("stop"):
