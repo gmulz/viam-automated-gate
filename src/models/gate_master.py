@@ -24,6 +24,8 @@ class GateMaster(Generic, EasyResource):
     primary_gate_opener: GateOpener
     # secondary_gate opens first and closes last
     secondary_gate_opener: GateOpener
+    # background task reference to prevent garbage collection
+    _background_task: Optional[asyncio.Task] = None
 
     @classmethod
     def new (
@@ -51,8 +53,60 @@ class GateMaster(Generic, EasyResource):
         
         self.primary_gate_opener = dependencies[GateOpener.get_resource_name(primary_gate_opener_name)]
         self.secondary_gate_opener = dependencies[GateOpener.get_resource_name(secondary_gate_opener_name)]
+    
+    async def open_gates(self):
+        secondary_gate_open = self.secondary_gate_opener.do_command({"open": True})
+        secondary_open_task = asyncio.create_task(secondary_gate_open)
+        # poll second gate opener status until it's no longer closed
+        max_attempts = 100
+        attempts = 0
+        while attempts < max_attempts:
+            secondary_status = await self.secondary_gate_opener.do_command({"status": True})
+            if secondary_status["status"] != "closed":
+                break
+            attempts += 1
+            await asyncio.sleep(0.1)
+        if attempts == max_attempts:
+            raise Exception("Secondary gate failed to open")
+        
+        # Start primary gate and wait for both commands to fully complete
+        primary_result, secondary_result = await asyncio.gather(
+            self.primary_gate_opener.do_command({"open": True}),
+            secondary_open_task
+        )
+        return {"primary": primary_result, "secondary": secondary_result}
+
+    async def close_gates(self):
+        primary_status = await self.primary_gate_opener.do_command({"close": True})
+        # confirm primary gate has closed
+        if primary_status["status"] != "closed":
+            raise Exception("Primary gate failed to close")
+
+        await self.secondary_gate_opener.do_command({"close": True})
+        return await self.secondary_gate_opener.do_command({"status": True})
+    
+    async def stop_gates(self):
+        primary_task = self.primary_gate_opener.do_command({"stop": True})
+        secondary_task = self.secondary_gate_opener.do_command({"stop": True})
+        await asyncio.gather(primary_task, secondary_task)
+        return {"status": "stopped"}
         
     
+    def _run_in_background(self, coro):
+        """Run a coroutine in the background, storing the task reference."""
+        # Cancel any existing background task
+        if self._background_task is not None and not self._background_task.done():
+            self._background_task.cancel()
+        self._background_task = asyncio.create_task(coro)
+        # Add a callback to log any exceptions
+        def handle_exception(task):
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc:
+                LOGGER.error(f"Background task failed: {exc}")
+        self._background_task.add_done_callback(handle_exception)
+
     async def do_command(
         self, 
         command: Mapping[str, ValueTypes], 
@@ -61,23 +115,13 @@ class GateMaster(Generic, EasyResource):
     ) -> Mapping[str, ValueTypes]:
         LOGGER.info(f"do_command called with command: {command}")
         if command.get("open"):
-            await self.secondary_gate_opener.do_command({"open": True})
-            # wait 5 seconds
-            await asyncio.sleep(5)
-            await self.primary_gate_opener.do_command({"open": True})
-            return await self.primary_gate_opener.do_command({"status": True})
+            self._run_in_background(self.open_gates())
+            return {"status": "opening"}
         elif command.get("close"):
-            primary_status = await self.primary_gate_opener.do_command({"close": True})
-            # confirm primary gate has closed
-            if primary_status["status"] != "closed":
-                raise Exception("Primary gate failed to close")
-                
-            await self.secondary_gate_opener.do_command({"close": True})
-            return await self.secondary_gate_opener.do_command({"status": True})
+            self._run_in_background(self.close_gates())
+            return {"status": "closing"}
         elif command.get("stop"):
-            await self.primary_gate_opener.do_command({"stop": True})
-            await self.secondary_gate_opener.do_command({"stop": True})
-            return {"status": "stopped"}
+            return await self.stop_gates()
         elif command.get("position"):
             return {"primary_position": await self.primary_gate_opener.do_command({"position": True}), "secondary_position": await self.secondary_gate_opener.do_command({"position": True})}
         elif command.get("status"):
