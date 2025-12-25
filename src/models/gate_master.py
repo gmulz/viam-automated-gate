@@ -62,6 +62,7 @@ class GateMaster(Generic, EasyResource):
         attempts = 0
         while attempts < max_attempts:
             secondary_status = await self.secondary_gate_opener.do_command({"status": True})
+            LOGGER.info(f"Secondary gate status: {secondary_status}")
             if secondary_status["status"] != "closed":
                 break
             attempts += 1
@@ -69,6 +70,7 @@ class GateMaster(Generic, EasyResource):
         if attempts == max_attempts:
             raise Exception("Secondary gate failed to open")
         
+        LOGGER.info("Secondary gate opened, starting primary gate")
         # Start primary gate and wait for both commands to fully complete
         primary_result, secondary_result = await asyncio.gather(
             self.primary_gate_opener.do_command({"open": True}),
