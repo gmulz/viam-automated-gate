@@ -230,8 +230,12 @@ class GateOpener(Generic, EasyResource):
         if position is not None and self.close_position_stop_min * 0.95 <= position <= self.close_position_stop_max * 1.05:
             LOGGER.info("Position sensor indicates gate is closed")
             return "closed"
-        # unknown gate state, at neither close nor open
-        return "unknown"
+        
+        motor_state = await self.get_motor_state()
+        if motor_state["is_powered"]:
+            return "moving"
+            
+        return "partially_open"
 
     # shut down the service. 
     # not the action to close the gate.
@@ -239,6 +243,10 @@ class GateOpener(Generic, EasyResource):
         motor = getattr(self, 'motor', None)
         if motor:
             await motor.set_power(0.0)
+    
+    async def get_motor_state(self):
+        [is_powered, power_pct] = await self.motor.is_powered()
+        return {"is_powered": is_powered, "power_pct": power_pct}
 
     async def get_position(self):
         values = []
