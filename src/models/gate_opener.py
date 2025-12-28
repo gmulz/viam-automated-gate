@@ -1,5 +1,6 @@
 from typing import ClassVar, Final, Mapping, Optional, Sequence, Tuple
 import asyncio
+import threading
 
 from typing_extensions import Self
 from viam.proto.app.robot import ComponentConfig
@@ -41,6 +42,7 @@ class GateOpener(Generic, EasyResource):
     motor_power_open: float = 1.0
     motor_power_close: float = 1.0
 
+    _lock: threading.Lock
 
     @classmethod
     def new(
@@ -58,7 +60,7 @@ class GateOpener(Generic, EasyResource):
         """
         
         service = cls(config.name)
-        service._lock = asyncio.Lock()
+        service._lock = threading.Lock()
         service.reconfigure(config, dependencies)
         return service
         # return super().new(config, dependencies)
@@ -271,7 +273,7 @@ class GateOpener(Generic, EasyResource):
         # actuation commands guarded by lock
         if self._lock.locked():
             return {"status": "busy"}
-        async with self._lock:
+        with self._lock:
             if command.get("open"):
                 await self.open_gate()
                 return {"status": await self.locate()}
